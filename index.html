@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disaster Risk Dashboard</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --sidebar-bg: rgba(30, 41, 59, 0.85);
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+            --accent: #38bdf8;
+            --high-risk: #ef4444;
+            --med-risk: #f59e0b;
+            --low-risk: #10b981;
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --map-filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(90%);
+        }
+
+        body.light-theme {
+            --bg-color: #f1f5f9;
+            --sidebar-bg: rgba(255, 255, 255, 0.9);
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --text-dim: #64748b;
+            --glass-border: rgba(0, 0, 0, 0.05);
+            --map-filter: none;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            height: 60px;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            justify-content: space-between;
+            z-index: 1000;
+        }
+
+        .logo {
+            font-weight: 700;
+            font-size: 1.25rem;
+            letter-spacing: -0.025em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo span {
+            color: var(--accent);
+        }
+
+        .status-badge {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--low-risk);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--low-risk);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--low-risk);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 0.5;
+            }
+
+            50% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0.5;
+            }
+        }
+
+        .risk-glow {
+            filter: blur(12px);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .risk-glow:hover {
+            filter: blur(6px);
+            fill-opacity: 0.45;
+        }
+
+        .pulsating-circle {
+            animation: pulse-ring 2.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.9);
+                opacity: 0.8;
+            }
+
+            80%,
+            100% {
+                transform: scale(1.1);
+                opacity: 0;
+            }
+        }
+
+        main {
+            flex: 1;
+            display: flex;
+            position: relative;
+        }
+
+        #map {
+            flex: 1;
+            z-index: 1;
+            filter: var(--map-filter);
+        }
+
+        .sidebar {
+            width: 400px;
+            height: calc(100vh - 60px);
+            background: var(--sidebar-bg);
+            backdrop-filter: blur(16px);
+            border-right: 1px solid var(--glass-border);
+            display: flex;
+            flex-direction: column;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .sidebar-header h2 {
+            font-size: 1.1rem;
+            margin-bottom: 4px;
+        }
+
+        .sidebar-header p {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+
+        #alerts-container {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .alert-card {
+            background: var(--card-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .alert-card:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .alert-card.active {
+            border-color: var(--accent);
+            background: rgba(56, 189, 248, 0.05);
+        }
+
+        .alert-details {
+            display: none;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid var(--glass-border);
+            animation: slideDown 0.3s ease;
+        }
+
+        .alert-card.active .alert-details {
+            display: block;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .explanation-box {
+            background: rgba(56, 189, 248, 0.1);
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 12px;
+            font-size: 0.8rem;
+            border-left: 3px solid var(--accent);
+        }
+
+        .olt-list {
+            list-style: none;
+        }
+
+        .olt-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            font-size: 0.75rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .olt-item:last-child {
+            border: none;
+        }
+
+        .olt-item .ip {
+            color: var(--accent);
+            font-weight: 500;
+        }
+
+        .olt-item .dist {
+            color: var(--text-dim);
+        }
+
+        .radius-pill {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            color: var(--accent);
+            font-weight: 500;
+        }
+
+        .sev-badge {
+            font-size: 0.65rem;
+            padding: 1px 6px;
+            border-radius: 40px;
+            font-weight: 700;
+            border: 1px solid currentColor;
+        }
+
+        .sev-1 {
+            color: #10b981;
+        }
+
+        .sev-2 {
+            color: #f59e0b;
+        }
+
+        .sev-3 {
+            color: #ef4444;
+        }
+
+        .sev-4 {
+            color: #ec4899;
+        }
+
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+
+        .risk-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .risk-high {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--high-risk);
+        }
+
+        .risk-medium {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--med-risk);
+        }
+
+        .risk-low {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--low-risk);
+        }
+
+        .alert-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            line-height: 1.4;
+            margin-bottom: 8px;
+        }
+
+        .alert-meta {
+            display: flex;
+            gap: 12px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        .alert-meta item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .leaflet-container {
+            background: var(--bg-color) !important;
+        }
+
+        .leaflet-popup-content-wrapper {
+            background: var(--card-bg) !important;
+            color: var(--text-main) !important;
+            border-radius: 12px !important;
+            border: 1px solid var(--glass-border) !important;
+        }
+
+        .leaflet-popup-tip {
+            background: var(--card-bg) !important;
+        }
+
+        .olt-marker {
+            background: var(--accent);
+            border: 2px solid #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--accent);
+        }
+
+        .disaster-marker {
+            color: var(--high-risk);
+            animation: bounce 0.5s infinite alternate;
+        }
+
+        @keyframes bounce {
+            from {
+                transform: translateY(0);
+            }
+
+            to {
+                transform: translateY(-5px);
+            }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-dim);
+        }
+
+        #alerts-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #alerts-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #alerts-container::-webkit-scrollbar-thumb {
+            background: var(--glass-border);
+            border-radius: 10px;
+        }
+
+        .node-down-panel {
+            position: absolute;
+            bottom: 24px;
+            right: 24px;
+            width: 320px;
+            max-height: 350px;
+            background: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(12px);
+            border-radius: 16px;
+            border: 1px solid var(--glass-border);
+            padding: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .node-down-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-shrink: 0;
+        }
+
+        .node-down-header h3 {
+            font-size: 0.9rem;
+            color: var(--high-risk);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        #node-down-list {
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .node-down-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-top: 1px solid var(--glass-border);
+            font-size: 0.8rem;
+        }
+
+        .node-down-item .ip {
+            color: var(--accent);
+            font-family: monospace;
+        }
+
+        #alerts-container::-webkit-scrollbar,
+        #node-down-list::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        #alerts-container::-webkit-scrollbar-track,
+        #node-down-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #alerts-container::-webkit-scrollbar-thumb,
+        #node-down-list::-webkit-scrollbar-thumb {
+            background: var(--glass-border);
+            border-radius: 10px;
+        }
+
+        #alerts-container::-webkit-scrollbar-thumb:hover,
+        #node-down-list::-webkit-scrollbar-thumb:hover {
+            background: var(--text-dim);
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="logo">
+            <span>DISASTER</span> CORE AI
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+            <button onclick="toggleTheme()"
+                style="background: rgba(255,255,255,0.05); color: var(--text-main); border: 1px solid var(--glass-border); padding: 6px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; gap: 6px;">
+                <span id="theme-icon">🌙</span> THEME
+            </button>
+            <button id="refresh-btn" onclick="forceRefresh()"
+                style="background: var(--accent); color: #000; border: none; padding: 6px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.8rem;">
+                FORCE REFRESH
+            </button>
+            <div class="status-badge">
+                <div class="status-dot"></div>
+                SYSTEM LIVE
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>Impact Analysis</h2>
+                <p id="alert-summary">Fetching latest data...</p>
+            </div>
+            <div id="alerts-container">
+                <div class="empty-state">Analyzing satellite & news data...</div>
+            </div>
+        </div>
+
+        <div id="map"></div>
+
+        <div class="node-down-panel" id="node-down-panel" style="display: none;">
+            <div class="node-down-header">
+                <h3>⚠️ NODE DOWN MONITOR</h3>
+                <span id="node-down-count" class="risk-badge risk-high">0</span>
+            </div>
+            <div id="node-down-list"></div>
+        </div>
+    </main>
+
+    <!-- Leaflet JS -->
+    <script src="vendor/leaflet/leaflet.js"></script>
+    <script>
+        const API_BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:8000' : '';
+
+        const map = L.map('map', {
+            zoomControl: false,
+            attributionControl: false
+        }).setView([13.7367, 100.5231], 6);
+
+        // 1. Longdo Map API Key
+        // WARNING: Keeping API keys in client-side code is necessary for map rendering,
+        // but ensure you restrict your key's referer in the Longdo Map console.
+        const longdoKey = "d70c6f28f906fd0a037d40dd54b78865"; // Replace with your key
+
+        const longdoBase = L.tileLayer(`https://ms.longdo.com/mmmap/tile.php?zoom={z}&x={x}&y={y}&key=${longdoKey}&proj=epsg3857&HD=1`, {
+            maxZoom: 19,
+            attribution: '&copy; Longdo Map'
+        }).addTo(map);
+
+        // Initialize Layer Groups
+        const disasterMarkers = L.layerGroup().addTo(map);
+        const baselineRiskLayer = L.layerGroup().addTo(map); // For historical flood circles
+
+        // Layer Control
+        const baseMaps = {
+            "Longdo Map": longdoBase
+        };
+        const overlayMaps = {
+            "Repeat Flood Areas": baselineRiskLayer
+        };
+        L.control.layers(null, overlayMaps, { position: 'topright', collapsed: false }).addTo(map);
+
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        let disasterLayers = [];
+        let oltLayers = [];
+
+        async function fetchBaseline() {
+            try {
+                console.log("Fetching hybrid baseline flood data...");
+                const resp = await fetch(`${API_BASE_URL}/api/flood-baseline`);
+                if (!resp.ok) throw new Error(`HTTP error! status: ${resp.status}`);
+                const data = await resp.json();
+                console.log(`Received ${data.length} baseline risk points.`);
+
+                baselineRiskLayer.clearLayers();
+                data.forEach(point => {
+                    const freqColor = point.freq > 10 ? '#ef4444' :
+                        point.freq > 5 ? '#f59e0b' : '#38bdf8';
+
+                    // Fully Interactive Blurred Circle
+                    L.circle([point.lat, point.lon], {
+                        radius: 2200,
+                        color: 'transparent',
+                        fillColor: freqColor,
+                        fillOpacity: 0.35,
+                        className: 'risk-glow',
+                        interactive: true
+                    }).addTo(baselineRiskLayer)
+                        .bindPopup(`<div style="font-family: 'Inter', sans-serif;">
+                                    <div style="font-weight: 700; color: ${freqColor}; margin-bottom: 4px;">HISTORICAL RISK ZONE</div>
+                                    <div style="font-size: 0.85rem;"><b>Node IP:</b> ${point.ip}</div>
+                                    <div style="font-size: 0.85rem;"><b>13y Recurrence:</b> ${point.freq} times</div>
+                                    <div style="margin-top: 8px; font-size: 0.75rem; color: #64748b;">*Data sourced from GISTDA Sphere</div>
+                                 </div>`);
+                });
+            } catch (err) {
+                console.error("Baseline Fetch Error:", err);
+            }
+        }
+
+        async function fetchData() {
+            try {
+                const [alertsResponse, nodesResponse] = await Promise.all([
+                    fetch(`${API_BASE_URL}/api/disaster-impact`),
+                    fetch(`${API_BASE_URL}/api/monitor/node-down`)
+                ]);
+                const alerts = await alertsResponse.json();
+                const nodes = await nodesResponse.json();
+                renderAlerts(alerts);
+                renderNodeDown(nodes);
+            } catch (err) {
+                console.error("Data Fetch Error:", err);
+            }
+        }
+
+        async function forceRefresh() {
+            const btn = document.getElementById('refresh-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = 'Refresing...';
+            btn.disabled = true;
+            try {
+                await fetch(`${API_BASE_URL}/api/system/refresh`, { method: 'POST' });
+                await fetchData();
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        function getSourceColor(source) {
+            return source === "PEA" ? "#a855f7" : "#38bdf8";
+        }
+
+        function renderAlerts(alerts) {
+            const container = document.getElementById('alerts-container');
+            const summary = document.getElementById('alert-summary');
+
+            summary.innerText = `${alerts.length} threats identified near nodes`;
+
+            container.innerHTML = '';
+            disasterMarkers.clearLayers();
+            // baselineRiskLayer is now managed separately by fetchBaseline() 
+            // but we can still highlight active alert nodes if needed.
+
+            alerts.forEach((alert, index) => {
+                const disaster = alert.disaster;
+                const riskLevel = alert.nearby_olts[0]?.risk_level || "Low";
+                const riskClass = `risk-${riskLevel.toLowerCase()}`;
+                const radius = disaster.impact_radius || 5;
+                const source = disaster.source || "DPM";
+                const sourceColor = getSourceColor(source);
+                const sevLevel = alert.ai_explanation?.severity_level || 1;
+
+                const card = document.createElement('div');
+                card.className = 'alert-card';
+                card.innerHTML = `
+                    <div class="alert-header">
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            <span class="risk-badge ${riskClass}">${riskLevel} Risk</span>
+                            <span class="sev-badge sev-${sevLevel}">LVL ${sevLevel}</span>
+                        </div>
+                        <div style="display: flex; gap: 6px">
+                           <span class="radius-pill" style="color: ${sourceColor}; border-color: ${sourceColor}">${source}</span>
+                           <span class="radius-pill">${radius}km</span>
+                        </div>
+                    </div>
+                    <div class="alert-title">${disaster.title}</div>
+                    ${disaster.source === 'PEA' ? `
+                        <div style="font-size: 0.75rem; color: #a855f7; margin-bottom: 8px; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                            <span>🕒</span> ${disaster.start_time} - ${disaster.end_time}
+                        </div>
+                    ` : ''}
+                    <div class="alert-meta">
+                        <div class="item">📍 ${disaster.extracted_location?.province || 'Local Area'}</div>
+                        <div class="item">📡 ${alert.nearby_olts.length} Affected</div>
+                    </div>
+                    
+                    <div class="alert-details">
+                        <div class="explanation-box" style="border-left-color: ${sourceColor}">
+                            <b style="color: ${sourceColor}">${source === "PEA" ? "PEA ANALYSIS" : "AI SCALE ANALYSIS"}:</b><br>
+                            ${alert.ai_explanation.scale_reason}<br>
+                            <small style="opacity: 0.7">${alert.ai_explanation.distance_reason}</small>
+                        </div>
+                        <div style="font-size: 0.75rem; font-weight: 600; margin-bottom: 8px; color: ${sourceColor}">AFFECTED OLTs</div>
+                        <div class="olt-list">
+                            ${alert.nearby_olts.map(olt => `
+                                <div class="olt-item">
+                                    <div style="flex: 1">
+                                        <span class="ip" style="color: ${sourceColor}">${olt.olt_ip}</span>
+                                        ${olt.flood_frequency > 0 ? `
+                                            <span style="font-size: 0.6rem; padding: 1px 4px; border-radius: 4px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; margin-left: 4px;">
+                                                Baseline: ${olt.flood_frequency} Floods
+                                            </span>
+                                        ` : ''}
+                                    </div>
+                                    <span class="dist">${olt.distance_km} km</span>
+                                    <span class="risk-badge" style="font-size: 0.6rem; padding: 1px 4px; background: rgba(255,255,255,0.05)">${olt.risk_level}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+
+                card.onclick = (e) => {
+                    const isActive = card.classList.contains('active');
+                    document.querySelectorAll('.alert-card').forEach(c => c.classList.remove('active'));
+                    if (!isActive) {
+                        card.classList.add('active');
+                        setTimeout(() => { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 300);
+                    }
+                    map.flyTo([disaster.latitude, disaster.longitude], 13);
+                };
+
+                container.appendChild(card);
+
+                // Add Disaster Marker to group
+                const dMarker = L.marker([disaster.latitude, disaster.longitude]).addTo(disasterMarkers);
+                const timeInfo = disaster.source === 'PEA' ? `<br><span style="color: #a855f7; font-size: 0.8rem;">🕒 ${disaster.start_time} - ${disaster.end_time}</span>` : '';
+                dMarker.bindPopup(`<div><b>${disaster.disaster_type}</b><br>${disaster.title}${timeInfo}</div>`);
+
+                // Add Disaster Radius to group
+                const circleColor = source === "PEA" ? "#a855f7" : sourceColor;
+                L.circle([disaster.latitude, disaster.longitude], {
+                    radius: radius * 1000,
+                    color: circleColor,
+                    fillColor: circleColor,
+                    fillOpacity: 0.1,
+                    weight: 1,
+                    dashArray: '5, 5'
+                }).addTo(disasterMarkers);
+
+                // Add OLT Markers and Baseline Risk Circles
+                alert.nearby_olts.forEach(olt => {
+                    let markerColor = '#10b981';
+                    if (olt.risk_level === 'High') markerColor = '#ef4444';
+                    else if (olt.risk_level === 'Medium') markerColor = '#f59e0b';
+
+                    const oMarker = L.circleMarker([olt.latitude, olt.longitude], {
+                        radius: 6, fillColor: markerColor, color: '#fff', weight: 2, opacity: 1, fillOpacity: 1
+                    }).addTo(disasterMarkers);
+
+                    oMarker.bindPopup(`<div><b>OLT: ${olt.olt_ip}</b><br>Flood Freq: ${olt.flood_frequency} times<br><span class="risk-badge" style="background: ${markerColor}33; color: ${markerColor}">Risk: ${olt.risk_level}</span></div>`);
+                });
+            });
+        }
+
+        function renderNodeDown(nodes) {
+            const panel = document.getElementById('node-down-panel');
+            const list = document.getElementById('node-down-list');
+            const count = document.getElementById('node-down-count');
+            oltLayers.forEach(l => map.removeLayer(l));
+            oltLayers = [];
+            if (nodes.length > 0) {
+                panel.style.display = 'flex';
+                count.innerText = nodes.length;
+                list.innerHTML = nodes.map(node => `<div class="node-down-item"><span class="ip">${node.ip_address}</span><span style="color: #94a3b8">${node.province || ''}</span></div>`).join('');
+                nodes.forEach(node => {
+                    if (node.latitude && node.longitude) {
+                        const nMarker = L.circleMarker([node.latitude, node.longitude], {
+                            radius: 6, fillColor: '#ef4444', color: '#fff', weight: 2, opacity: 1, fillOpacity: 0.8
+                        }).addTo(map);
+
+                        nMarker.bindPopup(`<div style="font-family: 'Inter', sans-serif;">
+                            <div style="font-weight: 700; color: #ef4444; margin-bottom: 4px;">OFFLINE OLT DETECTED</div>
+                            <div style="font-size: 0.85rem;"><b>IP Address:</b> ${node.ip_address}</div>
+                            <div style="font-size: 0.85rem;"><b>Service Area:</b> ${node.service_location || 'N/A'}</div>
+                            <div style="font-size: 0.85rem;"><b>Province:</b> ${node.province || 'N/A'}</div>
+                            <div style="margin-top: 8px; font-size: 0.75rem; color: #ef4444;">Please check connectivity or power status.</div>
+                        </div>`);
+
+                        oltLayers.push(nMarker);
+                    }
+                });
+            } else { panel.style.display = 'none'; }
+        }
+        function toggleTheme() {
+            const body = document.body;
+            body.classList.toggle('light-theme');
+            const isLight = body.classList.contains('light-theme');
+            document.getElementById('theme-icon').innerText = isLight ? '☀️' : '🌙';
+            localStorage.setItem('theme', isLight ? 'light' : 'dark');
+        }
+
+        // Initialize Theme
+        if (localStorage.getItem('theme') === 'light') {
+            document.body.classList.add('light-theme');
+            document.getElementById('theme-icon').innerText = '☀️';
+        }
+
+        fetchBaseline(); // Load our own Layer on startup
+        fetchData();
+        setInterval(fetchData, 30000);
+        setInterval(fetchBaseline, 600000); // Update baseline every 10 mins
+    </script>
+</body>
+
+</html>
